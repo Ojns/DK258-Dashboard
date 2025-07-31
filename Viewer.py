@@ -1,16 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from utils import load_parquet_file
-import os
 import io
 
 st.title("Data Viewer")
-
-@st.cache_data
-def load_parquet_file_cached(file_path):
-    """Cached wrapper for parquet loading"""
-    return load_parquet_file(file_path)
 
 @st.cache_data
 def load_parquet_from_bytes(file_bytes, filename):
@@ -21,57 +14,37 @@ def load_parquet_from_bytes(file_bytes, filename):
         st.error(f"Error loading {filename}: {e}")
         return None
 
-# Check if we have selected files
+# Check if we have uploaded files and selected files
+if 'uploaded_files_data' not in st.session_state or not st.session_state.uploaded_files_data:
+    st.warning("⚠️ No files uploaded!")
+    st.info("Please go to the **Homepage** first and upload some parquet files.")
+    st.stop()
+
 if 'selected_batches' not in st.session_state or not st.session_state.selected_batches:
     st.warning("⚠️ No files selected!")
-    st.info("Please go to the **Home** page first and select some parquet files to view here.")
+    st.info("Please go to the **Homepage** first and select some parquet files to view here.")
     st.stop()
 
-# Check data source method
-if 'data_source_method' not in st.session_state:
-    st.error("❌ No data source method found!")
-    st.info("Please go to the **Home** page first and choose your data source method.")
-    st.stop()
-
-data_method = st.session_state.data_source_method
+# Get the selected files from session state
 selected_batches = st.session_state.selected_batches
+uploaded_files_data = st.session_state.uploaded_files_data
 
-# Method-specific validation
-if data_method == "File Path":
-    if 'folder_path' not in st.session_state or not st.session_state.folder_path:
-        st.error("❌ No folder path found!")
-        st.info("Please go to the **Home** page first and set your data folder path.")
-        st.stop()
-    folder_path = st.session_state.folder_path
-    st.success(f"📁 Viewing {len(selected_batches)} selected files from: `{folder_path}`")
-    
-elif data_method == "File Upload":
-    if 'uploaded_files_data' not in st.session_state or not st.session_state.uploaded_files_data:
-        st.error("❌ No uploaded files found!")
-        st.info("Please go to the **Home** page first and upload some parquet files.")
-        st.stop()
-    
-    uploaded_files_data = st.session_state.uploaded_files_data
-    # Verify all selected files are still available
-    missing_files = [f for f in selected_batches if f not in uploaded_files_data.keys()]
-    if missing_files:
-        st.error(f"❌ Some selected files are no longer available: {missing_files}")
-        st.info("Please go back to the **Home** page and re-upload your files.")
-        st.stop()
-    
-    st.success(f"📁 Viewing {len(selected_batches)} uploaded files")
+# Verify all selected files are still available
+missing_files = [f for f in selected_batches if f not in uploaded_files_data.keys()]
+if missing_files:
+    st.error(f"❌ Some selected files are no longer available: {missing_files}")
+    st.info("Please go back to the **Homepage** and re-upload your files.")
+    st.stop()
+
+st.success(f"📁 Viewing {len(selected_batches)} uploaded files")
 
 # Display current selections with option to modify
 with st.expander("Current Selection", expanded=False):
-    st.write(f"**Data Source:** {data_method}")
     st.write("**Selected files:**")
     for f in selected_batches:
-        if data_method == "File Upload" and f in uploaded_files_data:
-            file_size = len(uploaded_files_data[f]) / 1024 / 1024  # MB
-            st.write(f"-- {f} ({file_size:.1f} MB)")
-        else:
-            st.write(f"-- {f}")
-    st.info("💡 Go back to **Home** page to change your selection")
+        file_size = len(uploaded_files_data[f]) / 1024 / 1024  # MB
+        st.write(f"-- {f} ({file_size:.1f} MB)")
+    st.info("💡 Go back to **Homepage** to change your selection")
 
 st.markdown("---")
 
@@ -85,12 +58,8 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
         st.write(f"**Dataset:** `{filename}`")
         
         try:
-            # Load data based on method
-            if data_method == "File Path":
-                file_path = os.path.join(folder_path, filename)
-                original_df = load_parquet_file_cached(file_path)
-            else:  # File Upload
-                original_df = load_parquet_from_bytes(uploaded_files_data[filename], filename)
+            # Load data from uploaded bytes
+            original_df = load_parquet_from_bytes(uploaded_files_data[filename], filename)
             
             if original_df is None:
                 continue
@@ -315,4 +284,4 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
             
         except Exception as e:
             st.error(f'❌ Could not process {filename}: {e}')
-            st.info("Please check if the file is valid and accessible.")
+            st.info("Please check if the file is a valid parquet file.")
