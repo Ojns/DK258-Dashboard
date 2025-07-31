@@ -63,14 +63,36 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
             
             if original_df is None:
                 continue
-                
-            # Initialize filtered dataframe
-            df = original_df.copy()
             
             # LINE GRAPH SECTION
             st.subheader("📈 Line Graph")
             
-            # Get numeric columns for plotting
+            # DATETIME RANGE SLIDER - MOVED TO TOP, BEFORE GRAPH CREATION
+            df = original_df.copy()  # Start with full dataset
+            
+            if isinstance(original_df.index, pd.DatetimeIndex):
+                st.write("**📅 Filter by Time Range:**")
+                
+                time_range = st.select_slider(
+                    "Adjust the time range:",
+                    options=original_df.index,
+                    value=(original_df.index.min(), original_df.index.max()),
+                    format_func=lambda x: x.strftime('%Y-%m-%d %H:%M') if hasattr(x, 'strftime') else str(x),
+                    key=f"time_range_{i}"
+                )
+                
+                # Apply time filtering BEFORE creating the graph
+                df = original_df.loc[time_range[0]:time_range[1]]
+                
+                # Show filtering info
+                if len(df) != len(original_df):
+                    st.info(f"🔍 Showing {len(df):,} of {len(original_df):,} total rows ({len(df)/len(original_df)*100:.1f}%)")
+                else:
+                    st.success("📊 Showing full time range")
+                
+                st.markdown("---")
+            
+            # Get numeric columns for plotting (from filtered data)
             numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
             datetime_columns = df.select_dtypes(include=['datetime64']).columns.tolist()
             
@@ -120,36 +142,35 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
                         selected_x = None
                         st.warning("No suitable columns found for X-axis")
                 
-                # Plot the graph if we have valid selections
+                # Create and display the graph (SINGLE GRAPH with filtered data)
                 if selected_y_columns and selected_x is not None:
                     try:
-                        # Prepare the data for plotting
-                        plot_df = df.copy()
-                        
                         # Handle x-axis data
                         if selected_x == "index":
-                            x_data = plot_df.index
+                            x_data = df.index
                             x_title = "Index"
                         else:
-                            x_data = plot_df[selected_x]
+                            x_data = df[selected_x]
                             x_title = selected_x
                         
-                        # Create the plot
+                        # Create the plot with filtered data
                         fig = go.Figure()
                         
                         # Add a line for each selected y column
                         for y_col in selected_y_columns:
                             fig.add_trace(go.Scatter(
                                 x=x_data,
-                                y=plot_df[y_col],
+                                y=df[y_col],
                                 mode='lines',
                                 name=y_col,
                                 line=dict(width=2)
                             ))
                         
-                        # Update layout
+                        # Update layout with dynamic title
+                        filter_status = f" - Filtered ({len(df):,} points)" if len(df) != len(original_df) else f" ({len(df):,} points)"
+                        
                         fig.update_layout(
-                            title=f"Line Graph for {filename} ({len(plot_df):,} points)",
+                            title=f"Line Graph for {filename}{filter_status}",
                             xaxis_title=x_title,
                             yaxis_title="Values",
                             hovermode='x unified',
@@ -157,65 +178,8 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
                             height=500
                         )
                         
-                        # Display the plot
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # DATETIME RANGE SLIDER - BELOW THE GRAPH
-                        if isinstance(original_df.index, pd.DatetimeIndex):
-                            st.markdown("---")
-                            st.write("**📅 Filter by Time Range:**")
-                            
-                            time_range = st.select_slider(
-                                "Adjust the time range and the graph will update:",
-                                options=original_df.index,
-                                value=(original_df.index.min(), original_df.index.max()),
-                                format_func=lambda x: x.strftime('%Y-%m-%d %H:%M') if hasattr(x, 'strftime') else str(x),
-                                key=f"time_range_{i}"
-                            )
-                            
-                            # Check if time range has changed from full range
-                            if time_range != (original_df.index.min(), original_df.index.max()):
-                                # Filter data based on selected time range
-                                df_filtered = original_df.loc[time_range[0]:time_range[1]]
-                                
-                                # Show filtering info
-                                st.info(f"🔍 Time filter active: Showing {len(df_filtered):,} of {len(original_df):,} total rows ({len(df_filtered)/len(original_df)*100:.1f}%)")
-                                
-                                # Update the plot with filtered data
-                                if selected_x == "index":
-                                    filtered_x_data = df_filtered.index
-                                else:
-                                    filtered_x_data = df_filtered[selected_x]
-                                
-                                # Create updated plot
-                                fig_filtered = go.Figure()
-                                
-                                for y_col in selected_y_columns:
-                                    fig_filtered.add_trace(go.Scatter(
-                                        x=filtered_x_data,
-                                        y=df_filtered[y_col],
-                                        mode='lines',
-                                        name=y_col,
-                                        line=dict(width=2)
-                                    ))
-                                
-                                fig_filtered.update_layout(
-                                    title=f"Line Graph for {filename} - Filtered ({len(df_filtered):,} points)",
-                                    xaxis_title=x_title,
-                                    yaxis_title="Values",
-                                    hovermode='x unified',
-                                    showlegend=True,
-                                    height=500
-                                )
-                                
-                                # Replace the original plot
-                                st.plotly_chart(fig_filtered, use_container_width=True, key=f"filtered_plot_{i}")
-                                
-                                # Update df for the rest of the displays
-                                df = df_filtered
-                                
-                            else:
-                                st.success("📊 Showing full time range")
+                        # Display the single, dynamic graph
+                        st.plotly_chart(fig, use_container_width=True, key=f"plot_{i}")
                         
                         # Show some stats about the plotted data
                         with st.expander(f"Plot Statistics", expanded=False):
@@ -235,7 +199,7 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
             
             st.markdown("---")
             
-            # DATASET INFORMATION
+            # DATASET INFORMATION (uses filtered data)
             st.subheader("📊 Dataset Information")
             
             # Show basic info about the dataset
