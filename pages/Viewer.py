@@ -67,32 +67,20 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
             # LINE GRAPH SECTION
             st.subheader("📈 Line Graph")
             
-            # DATETIME RANGE SLIDER - MOVED TO TOP, BEFORE GRAPH CREATION
-            df = original_df.copy()  # Start with full dataset
+            # Start with full dataset, but check if time filtering should be applied
+            df = original_df.copy()
             
-            if isinstance(original_df.index, pd.DatetimeIndex):
-                st.write("**📅 Filter by Time Range:**")
-                
-                time_range = st.select_slider(
-                    "Adjust the time range:",
-                    options=original_df.index,
-                    value=(original_df.index.min(), original_df.index.max()),
-                    format_func=lambda x: x.strftime('%Y-%m-%d %H:%M') if hasattr(x, 'strftime') else str(x),
-                    key=f"time_range_{i}"
-                )
-                
-                # Apply time filtering BEFORE creating the graph
-                df = original_df.loc[time_range[0]:time_range[1]]
-                
-                # Show filtering info
-                if len(df) != len(original_df):
-                    st.info(f"🔍 Showing {len(df):,} of {len(original_df):,} total rows ({len(df)/len(original_df)*100:.1f}%)")
-                else:
-                    st.success("📊 Showing full time range")
-                
-                st.markdown("---")
+            # Check if we have a time range selection in session state for this tab
+            time_filter_key = f"time_range_{i}"
+            has_datetime_index = isinstance(original_df.index, pd.DatetimeIndex)
             
-            # Get numeric columns for plotting (from filtered data)
+            # Apply time filtering if it exists and we have datetime index
+            if has_datetime_index and time_filter_key in st.session_state:
+                time_range = st.session_state[time_filter_key]
+                if time_range != (original_df.index.min(), original_df.index.max()):
+                    df = original_df.loc[time_range[0]:time_range[1]]
+            
+            # Get numeric columns for plotting (from potentially filtered data)
             numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
             datetime_columns = df.select_dtypes(include=['datetime64']).columns.tolist()
             
@@ -142,7 +130,7 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
                         selected_x = None
                         st.warning("No suitable columns found for X-axis")
                 
-                # Create and display the graph (SINGLE GRAPH with filtered data)
+                # Create and display the graph
                 if selected_y_columns and selected_x is not None:
                     try:
                         # Handle x-axis data
@@ -153,7 +141,7 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
                             x_data = df[selected_x]
                             x_title = selected_x
                         
-                        # Create the plot with filtered data
+                        # Create the plot
                         fig = go.Figure()
                         
                         # Add a line for each selected y column
@@ -178,8 +166,28 @@ for i, (tab, filename) in enumerate(zip(tabs, selected_batches)):
                             height=500
                         )
                         
-                        # Display the single, dynamic graph
+                        # Display the graph
                         st.plotly_chart(fig, use_container_width=True, key=f"plot_{i}")
+                        
+                        # TIME RANGE SLIDER - NOW BELOW THE GRAPH
+                        if has_datetime_index:
+                            st.markdown("---")
+                            st.write("**📅 Filter by Time Range:**")
+                            
+                            # Show current filter status
+                            if len(df) != len(original_df):
+                                st.info(f"🔍 Time filter active: Showing {len(df):,} of {len(original_df):,} total rows ({len(df)/len(original_df)*100:.1f}%)")
+                            else:
+                                st.success("📊 Showing full time range")
+                            
+                            # Time range slider
+                            time_range = st.select_slider(
+                                "Adjust the time range and the graph will update:",
+                                options=original_df.index,
+                                value=(original_df.index.min(), original_df.index.max()),
+                                format_func=lambda x: x.strftime('%Y-%m-%d %H:%M') if hasattr(x, 'strftime') else str(x),
+                                key=time_filter_key
+                            )
                         
                         # Show some stats about the plotted data
                         with st.expander(f"Plot Statistics", expanded=False):
