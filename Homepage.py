@@ -5,18 +5,47 @@ import os
 
 st.title("DK258 Dashboard")
 
-# Detect if running on Streamlit Cloud
+# Simple cloud detection using Streamlit context and fallbacks
 def is_cloud_deployment():
-    """Check if app is running on Streamlit Cloud or similar cloud platform"""
+    """Simple cloud detection using multiple methods"""
+    try:
+        # Method 1: Try to access Streamlit's runtime context
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        from streamlit.runtime import get_instance
+        
+        ctx = get_script_run_ctx()
+        if ctx is None:
+            return False
+            
+        # Check if we're running in Streamlit Cloud
+        runtime = get_instance()
+        if hasattr(runtime, '_main_script_path'):
+            # In cloud, the path often contains specific patterns
+            script_path = str(runtime._main_script_path).lower()
+            if '/app/' in script_path or 'streamlit' in script_path:
+                return True
+    except:
+        pass
+    
+    # Method 2: Check hostname patterns
+    hostname = os.getenv('HOSTNAME', '').lower()
+    if 'streamlit.app' in hostname or 'streamlitapp.com' in hostname:
+        return True
+    
+    # Method 3: Check if current directory is read-only (common in cloud)
+    try:
+        test_file = '.write_test_tmp'
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+        return False  # If we can write, probably local
+    except:
+        return True  # If we can't write, probably cloud
+    
+    # Method 4: Environment variables fallback
     return (
-        os.getenv('STREAMLIT_SHARING_MODE') is not None or
-        os.getenv('STREAMLIT_SERVER_PORT') is not None or
-        'streamlit.app' in os.getenv('HOSTNAME', '') or
-        'herokuapp' in os.getenv('HOSTNAME', '') or
-        'render' in os.getenv('HOSTNAME', '') or
-        os.getenv('DYNO') is not None or  # Heroku
-        os.getenv('RENDER') is not None or  # Render
-        os.getenv('RAILWAY_STATIC_URL') is not None  # Railway
+        os.getenv('STREAMLIT_CLOUD') == 'true' or
+        os.getenv('STREAMLIT_SHARING_MODE') is not None
     )
 
 # Initialize session state
@@ -35,8 +64,11 @@ def get_parquet_files_cached(folder_path):
     """Cached wrapper for the utils function"""
     return get_parquet_files(folder_path)
 
+# Determine if we're in cloud
+is_cloud = is_cloud_deployment()
+
 # Show environment info in sidebar
-if not is_cloud_deployment():
+if not is_cloud:
     st.sidebar.success("🏠 **Local Environment**")
     st.sidebar.info("You have access to both File Path and File Upload methods.")
     
@@ -63,7 +95,8 @@ else:
 # Method selection based on environment
 st.markdown("### 📂 Data Source")
 
-if is_cloud_deployment():
+if is_cloud:
+    # Cloud deployment: only show file upload
     st.info("📤 **File Upload Mode** - Upload your parquet files directly to analyze them.")
     st.markdown("*Running in cloud mode - optimized for easy sharing and collaboration.*")
     data_method = "File Upload"
@@ -91,7 +124,7 @@ else:
     if data_method != st.session_state.data_source_method:
         st.session_state.data_source_method = data_method
         st.session_state.selected_batches = []  # Clear selections when switching methods
-        # NOTE: We DON'T clear uploaded_files_data anymore - keep them cached!
+        # Keep uploaded files cached!
         st.info(f"🔄 Switched to {data_method} method. Your selections have been cleared, but uploaded files remain cached.")
 
 st.markdown("---")
@@ -163,8 +196,20 @@ if data_method == "File Path":
         st.info("👆 Please enter the path to your data folder above.")
         
         with st.expander("💡 Path Examples", expanded=False):
-            st.write("""**Windows examples:** `C:\\Users\\YourName\\Documents\\Data`
-            **Mac/Linux examples:** `/Users/yourname/Documents/data`""")
+            st.write("""
+            **Windows examples:**
+            - `C:\\Users\\YourName\\Documents\\Data`
+            - `D:\\Projects\\ParquetFiles`
+            
+            **Mac/Linux examples:**
+            - `/Users/yourname/Documents/data`
+            - `/home/username/projects/data`
+            
+            **Tips:**
+            - Use forward slashes (/) or double backslashes (\\\\)
+            - Make sure the folder contains .parquet files
+            - The path should be absolute (full path from root)
+            """)
 
 # FILE UPLOAD METHOD
 elif data_method == "File Upload":
@@ -252,9 +297,23 @@ elif data_method == "File Upload":
         
         with st.expander("ℹ️ What files can I upload?", expanded=False):
             st.write("""
-            **Supported:** `.parquet` files only
-            **Features:** Files are cached in memory between method switches
-            **Tip:** You can switch to File Path method and return - your uploads will still be here!
+            **Supported file format:**
+            - `.parquet` files only
+            
+            **File requirements:**
+            - Files should contain tabular data
+            - Preferably with datetime index or datetime columns for time series visualization
+            - Numeric columns for plotting line graphs
+            
+            **File size limits:**
+            - Maximum file size depends on your platform
+            - For large files, consider using the local version with File Path method
+            
+            **Tips:**
+            - You can upload multiple files at once by holding Ctrl/Cmd while selecting
+            - Each file will appear as a separate tab in the Viewer
+            - File names will be used as tab names (without .parquet extension)
+            - Files are cached in memory between method switches (local only)
             """)
 
 # Show current method and selection summary
@@ -263,7 +322,7 @@ st.markdown("### 📋 Current Status")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    environment = "☁️ Cloud" if is_cloud_deployment() else "🏠 Local"
+    environment = "☁️ Cloud" if is_cloud else "🏠 Local"
     st.metric("Environment", environment)
     
 with col2:
@@ -292,7 +351,7 @@ if st.session_state.selected_batches:
             st.caption(f"Total size: {total_size:.1f} MB")
 
 # Footer with sharing info for cloud deployment
-if is_cloud_deployment():
+if is_cloud:
     st.markdown("---")
     st.markdown("### 🚀 Share This App")
     st.info("""
